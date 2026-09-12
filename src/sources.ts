@@ -1,0 +1,7 @@
+import{homedir}from'node:os';import{join,isAbsolute,resolve}from'node:path';import{lstatSync,realpathSync}from'node:fs';
+export const SOURCE_IDS=['codex','kimi','zcode']as const;export type SourceId=typeof SOURCE_IDS[number];
+export interface Source{enabled:boolean;path:string}export type Sources=Record<SourceId,Source>;
+export function defaultSources(home=homedir(),codexHome=process.env.CODEX_HOME):Sources{return {codex:{enabled:false,path:join(codexHome&&isAbsolute(codexHome)?codexHome:join(home,'.codex'),'auth.json')},kimi:{enabled:false,path:join(home,'.kimi-code','sessions')},zcode:{enabled:false,path:join(home,'.zcode','cli','db','db.sqlite')}};}
+export function parseSources(raw:unknown):Sources{const v=raw as Sources;const result={}as Sources;for(const id of SOURCE_IDS){const s=v?.[id];if(!s||typeof s.enabled!=='boolean'||typeof s.path!=='string'||s.path.length>4096||/[\r\n\0]/.test(s.path)||(s.path&&!isAbsolute(s.path))||(s.enabled&&!s.path))throw Error('source-config');result[id]={enabled:s.enabled,path:s.path?resolve(s.path):''};}return result;}
+// Checking a source never reads contents. Every actual reader repeats this redirect check.
+export function sourcePath(source:Source|undefined,kind:'file'|'directory'){if(!source?.enabled||!source.path)throw Error('source-disabled');const p=resolve(source.path),s=lstatSync(p);if(s.isSymbolicLink()||(kind==='file'?!s.isFile():!s.isDirectory())||realpathSync(p).toLowerCase()!==p.toLowerCase())throw Error('source-path');return p;}

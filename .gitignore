@@ -1,0 +1,10 @@
+node_modules/
+dist/
+release/
+data/
+.private/
+quota-location-*.json
+*.log
+*.sealed
+.env*
+!.env.example

@@ -1,0 +1,19 @@
+import{mkdir,cp,writeFile,readFile,readdir,unlink}from'node:fs/promises';import{resolve,join,relative}from'node:path';import{createHash}from'node:crypto';import{listPackage,extractFile}from'@electron/asar';import{execFileSync}from'node:child_process';
+import{tree,validateDestination,validateBuilderEntries}from'./package-safety.mjs';
+if(process.platform!=='win32')throw Error('Packaging targets Windows x64.');
+const {version}=JSON.parse(await readFile('package.json','utf8'));if(!/^\d+\.\d+\.\d+(?:-beta\.\d+)?$/.test(version))throw Error('Invalid version');
+const base=resolve('release','v'+version),source=join(base,'build','win-unpacked'),portable=join(base,'QuotaMonitor'),archive=join(source,'resources','app.asar');
+const sourceEntries=await tree(source),electronRoot=resolve('node_modules/electron/dist');const originalEntries=await tree(electronRoot);const original=new Map(originalEntries.map(f=>[f==='electron.exe'?'多模型额度监控台.exe':f==='LICENSE'?'LICENSE.electron.txt':f,f]));const extras=new Map([['resources/app.asar',null],['resources/manage-profile-autostart.ps1','scripts/manage-profile-autostart.ps1'],['resources/product.json','assets/product.json'],['resources/LICENSE','LICENSE'],['resources/THIRD-PARTY-NOTICES.md','THIRD-PARTY-NOTICES.md']]);
+validateBuilderEntries(sourceEntries,originalEntries,[...extras.keys()]);
+// electron-builder patches the executable's ASAR integrity resource; other runtime files stay byte-identical.
+for(const file of sourceEntries){if(!original.has(file)&&!extras.has(file))throw Error('Unknown builder output');if(file.endsWith('/')||file==='多模型额度监控台.exe'||file==='resources/app.asar')continue;const expected=extras.has(file)?extras.get(file):join(electronRoot,original.get(file));if(!(await readFile(join(source,file))).equals(await readFile(expected)))throw Error('Unexpected changed runtime or license file');}
+await validateDestination(portable,sourceEntries);
+const entries=listPackage(archive);if(entries.some(f=>/private|tests|probe|fixtures|\.sealed/i.test(f)))throw Error('Unexpected package entry');
+for(const name of ['dist/main.cjs','dist/renderer.js']){const text=extractFile(archive,name).toString();if(/--v12-qa|--smoke-test|SYNTHETIC-ACCESS|web-login-migration-v1\.sealed/.test(text))throw Error('Test or migration code in production');}
+await mkdir(portable,{recursive:true});await mkdir(join(portable,'data'),{recursive:true});if((await readdir(join(portable,'data'))).length)throw Error('Refusing to package nonempty user data');
+await cp(source,join(portable,'app'),{recursive:true});for(const name of ['LICENSE','THIRD-PARTY-NOTICES.md'])await cp(name,join(portable,name));await cp('PORTABLE-V1.3.md',join(portable,'使用说明.md'));await writeFile(join(portable,'quota-monitor.json'),JSON.stringify({schema:1,dataRoot:'data'},null,2));
+// PowerShell/.NET is available on the target OS; no separate archiver runtime is needed.
+const zip=join(base,`QuotaMonitor-${version}-windows-x64.zip`);await unlink(zip).catch(e=>{if(e.code!=='ENOENT')throw e;});const quote=v=>"'"+v.replaceAll("'","''")+"'";
+const command="$ErrorActionPreference='Stop'; Add-Type -AssemblyName System.IO.Compression.FileSystem; [IO.Compression.ZipFile]::CreateFromDirectory("+quote(portable)+','+quote(zip)+',[IO.Compression.CompressionLevel]::Optimal,$true)';
+execFileSync(join(process.env.SystemRoot,'System32','WindowsPowerShell','v1.0','powershell.exe'),['-NoProfile','-NonInteractive','-EncodedCommand',Buffer.from(command,'utf16le').toString('base64')],{windowsHide:true,stdio:'inherit'});
+const digest=async file=>createHash('sha256').update(await readFile(file)).digest('hex');const result={version,zip:relative(process.cwd(),zip),sha256:await digest(zip),asarSHA256:await digest(archive),dataEmpty:true};await writeFile(join(base,'SHA256.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result));

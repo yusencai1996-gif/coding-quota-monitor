@@ -1,0 +1,4 @@
+// Shared numeric/time parsing is browser-safe; provider metadata hashing stays in the main process.
+export function number(x:unknown):number|null {if(typeof x!=='number'&&!(typeof x==='string'&&/^\d+(\.\d+)?$/.test(x)))return null;const n=Number(x);return Number.isFinite(n)&&n>=0?n:null;}
+export function instant(x:unknown,unit:'seconds'|'milliseconds'|'iso'):number|null {if(unit==='iso'){if(typeof x!=='string'||!/(Z|[+-]\d{2}:\d{2})$/.test(x))return null;const t=Date.parse(x);return Number.isFinite(t)?t:null;}const n=number(x);if(n===null||n===0)return null;const t=n*(unit==='seconds'?1000:1);return t<8640000000000000?t:null;}
+export function duration(x:unknown):string {const n=number(x);if(!n)return '周期未提供';return n%604800===0?`${n/604800} 周窗口`:n%86400===0?`${n/86400} 天窗口`:n%3600===0?`${n/3600} 小时窗口`:`${n/60} 分钟窗口`;}

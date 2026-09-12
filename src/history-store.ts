@@ -1,0 +1,11 @@
+import {mkdir,readFile,readdir,unlink}from'node:fs/promises';import {join}from'node:path';
+import {atomicWrite}from'./storage';import {mergeHistory,validStoredHistory}from'./activity-parsers';import type{TokenHistory,ActivityProvider}from'./activity-model';
+export class HistoryStore {
+ private writes=new Map<string,Promise<unknown>>();
+ maintenanceStatus:'idle'|'ok'|'storage'='idle';
+ constructor(private root:string){}
+ private path(id:ActivityProvider,scope:string){if(!/^[a-f0-9]{64}$/.test(scope))throw Error('scope');return join(this.root,id+'-'+scope+'.json');}
+ async read(id:ActivityProvider,scope:string):Promise<TokenHistory|undefined>{try{const text=await readFile(this.path(id,scope),'utf8');if(text.length>1024*1024)return;const raw=JSON.parse(text);if(raw.scope!==scope)return;const history=validStoredHistory(raw.history);if(history?.source!==(id==='codex'?'codex-profile-v1':'glm-activity-v1'))return;return mergeHistory(undefined,history);}catch{return;}}
+ async prune(){let failed=false;try{for(const entry of await readdir(this.root,{withFileTypes:true}).catch((e:NodeJS.ErrnoException)=>{if(e.code!=='ENOENT')failed=true;return [];})){const match=/^(glm|codex)-([a-f0-9]{64})\.json$/.exec(entry.name);if(!entry.isFile()||!match)continue;const id=match[1]as ActivityProvider,scope=match[2],path=this.path(id,scope);const job=(this.writes.get(path)??Promise.resolve()).catch(()=>{}).then(async()=>{const history=await this.read(id,scope);if(!history)return;if(!history.days.length)await unlink(path);else await atomicWrite(path,JSON.stringify({schema:1,scope,history}));});this.writes.set(path,job);try{await job;}catch{failed=true;}finally{if(this.writes.get(path)===job)this.writes.delete(path);}}}catch{failed=true;}this.maintenanceStatus=failed?'storage':'ok';return this.maintenanceStatus;}
+ async merge(id:ActivityProvider,scope:string,history:TokenHistory):Promise<TokenHistory>{const path=this.path(id,scope);const job=(this.writes.get(path)??Promise.resolve()).catch(()=>{}).then(async()=>{const previous=await this.read(id,scope),next=mergeHistory(previous,history);await mkdir(this.root,{recursive:true});await atomicWrite(path,JSON.stringify({schema:1,scope,history:next}));return next;});this.writes.set(path,job);try{return await job;}finally{if(this.writes.get(path)===job)this.writes.delete(path);}}
+}

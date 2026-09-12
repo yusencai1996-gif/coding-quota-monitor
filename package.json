@@ -1,0 +1,75 @@
+{
+  "name": "coding-quota-monitor",
+  "version": "1.3.0-beta.2",
+  "private": true,
+  "description": "Windows 多平台额度监控台",
+  "main": "dist/main.cjs",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "node scripts/test.mjs",
+    "start": "node scripts/ensure-electron.mjs && npm run build && electron .",
+    "pack": "node scripts/ensure-electron.mjs && npm run build && electron-builder --win dir",
+    "package": "node scripts/package-portable.mjs",
+    "screenshots": "node scripts/screenshots.mjs",
+    "setup:electron": "node scripts/ensure-electron.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "26.5.0",
+    "acorn": "8.18.0",
+    "electron": "44.3.0",
+    "electron-builder": "26.15.3",
+    "esbuild": "0.28.2",
+    "playwright-core": "1.63.0",
+    "typescript": "7.0.2"
+  },
+  "build": {
+    "appId": "local.coding-quota-monitor",
+    "productName": "多模型额度监控台",
+    "directories": {
+      "output": "release/v1.3.0-beta.2/build"
+    },
+    "files": [
+      "dist/main.cjs",
+      "dist/preload.cjs",
+      "dist/renderer.js",
+      "dist/index.html",
+      "dist/style.css",
+      "package.json",
+      "dist/ACORN-LICENSE.txt"
+    ],
+    "asar": true,
+    "win": {
+      "target": "dir",
+      "signAndEditExecutable": false
+    },
+    "electronDist": "node_modules/electron/dist",
+    "extraResources": [
+      {
+        "from": "scripts/manage-profile-autostart.ps1",
+        "to": "manage-profile-autostart.ps1"
+      },
+      {
+        "from": "assets/product.json",
+        "to": "product.json"
+      },
+      {
+        "from": "LICENSE",
+        "to": "LICENSE"
+      },
+      {
+        "from": "THIRD-PARTY-NOTICES.md",
+        "to": "THIRD-PARTY-NOTICES.md"
+      }
+    ]
+  },
+  "license": "MIT",
+  "author": "yusencai1996-gif",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yusencai1996-gif/coding-quota-monitor.git"
+  },
+  "engines": {
+    "node": ">=26.2.0"
+  }
+}
