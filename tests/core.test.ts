@@ -54,3 +54,7 @@ test('keystore synthetic save has no plaintext; fail closed preserves prior key;
 import './v123.test';
 
 import './v13.test';
+
+import './opencode-oauth.test';
+import './opencode-mcp.test';
+import './opencode-connection.test';
