@@ -21,6 +21,22 @@ test('out of range percent is unknown',()=>assert.throws(()=>parse('codex',{rate
 test('DeepSeek currency and total/paid/grant are not percentages',()=>{const d=parse('deepseek',{balance_infos:[{currency:'USD',total_balance:'12.30',granted_balance:'2.30',topped_up_balance:'10'}]});assert.equal(d.kind,'balance');assert.equal(d.balances[0].total,12.3);assert.equal(d.windows.length,0);assert.throws(()=>parse('deepseek',{balance_infos:[{total_balance:'12'}]}));});
 test('Kimi omitted used follows official zero semantics only with a positive limit',()=>{const d=parse('kimi',{usage:{used:'20',limit:'100',resetTime:'2026-09-10T00:00:00Z'},limits:[{window:{duration:300,timeUnit:'TIME_UNIT_MINUTE'},detail:{limit:'100'}},{detail:{used:'1',limit:'0'}}]});assert.equal(d.windows[0].remaining,80);assert.equal(d.windows[1].label,'5 小时窗口');assert.equal(d.windows[1].remaining,100);assert.equal(d.windows[2].remaining,null);});
 test('Kimi malformed or absent limits stay unknown rather than healthy',()=>{const d=parse('kimi',{usage:{used:'20',limit:'100'},limits:[{detail:{used:'invalid',limit:'100'}},{detail:{used:null,limit:'100'}},{detail:{used:'0'}},{detail:{}}]});assert.deepEqual(d.windows.slice(1).map(w=>w.remaining),[null,null,null,null]);});
+test('Kimi new plan keeps 5h and shared monthly pool separate without inventing weekly quota',()=>{
+ const d=parse('kimi',{usages:{limit_5h:{used_ratio:0.1},limit_month_total:{used_ratio:'0.25',reset_time:'2026-11-01T00:00:00Z'},limit_month_code:{used_ratio:0.15}}});
+ assert.deepEqual(d.windows.map(w=>w.remaining),[90,75]);assert.equal(d.windows[1].label,'月总额度（Kimi 与 Code 共用）');assert.equal(d.windows[1].resetAt,Date.parse('2026-11-01T00:00:00Z'));assert.equal(d.windows[1].id,'kimi:month-total');
+});
+test('Kimi monthly ratios never treat missing or malformed values as unused quota',()=>{
+ for(const value of [undefined,null,'',true,-0.1,1.1,Infinity,'invalid']){
+  const d=parse('kimi',{limits:[{window:{duration:300,timeUnit:'TIME_UNIT_MINUTE'},detail:{used:10,limit:100}}],usages:{limit_month_total:{used_ratio:value,reset_time:'2026-11-01T00:00:00'}}});
+  assert.equal(d.windows[1].remaining,null);assert.equal(d.windows[1].resetAt,null);
+ }
+ for(const value of [0,1])assert.equal(parse('kimi',{usages:{limit_month_total:{used_ratio:value}}}).windows[0].remaining,100-value*100);
+ assert.throws(()=>parse('kimi',{usages:{limit_month_code:{used_ratio:0.2}}}));
+});
+test('Kimi mixed payload retains legacy readings and does not duplicate quota windows',()=>{
+ const d=parse('kimi',{usage:{used:20,limit:100},limits:[{window:{duration:300,timeUnit:'TIME_UNIT_MINUTE'},detail:{used:30,limit:100}}],usages:{limit_5h:{used_ratio:0},limit_7d:{used_ratio:0},limit_month_total:{used_ratio:0.4}}});
+ assert.deepEqual(d.windows.map(w=>w.remaining),[80,70,60]);
+});
 test('GLM percentage is used; raw messages not propagated',()=>{const d=parse('glm',{data:{limits:[{type:'TOKENS_LIMIT',percentage:25}]},message:'SECRET'});assert.equal(d.windows[0].remaining,75);assert.ok(!JSON.stringify(d).includes('SECRET'));});
 test('MiniMax only explicit remaining percent, never guesses counters',()=>{assert.throws(()=>parse('minimax',{model_remains:[{current_interval_total_count:100,current_interval_usage_count:20}]}));const d=parse('minimax',{model_remains:[{current_interval_remaining_percent:20,current_weekly_remaining_percent:30}]});assert.equal(d.windows[0].remaining,20);assert.equal(d.windows[1].remaining,30);});
 test('OpenCode percent used and missing window kept unknown',()=>{const d=parse('opencode',{usage:{rolling:{percent:70,resetsAt:'2027-01-15T08:00:00Z'},weekly:{percent:null}}});assert.equal(d.windows[0].remaining,30);assert.equal(d.windows[1].remaining,null);});

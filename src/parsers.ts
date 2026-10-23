@@ -25,6 +25,17 @@ export function parse(id:Provider,input:unknown,now=Date.now()):Snapshot {
   const u=obj(root.usage);if(Object.keys(u).length)windows.push({...fromUsed('周窗口',kimiRatio(u),instant(u.resetTime,'iso')),id:'kimi:usage'});
   const units:Record<string,number>={TIME_UNIT_MINUTE:60,TIME_UNIT_HOUR:3600,TIME_UNIT_DAY:86400,TIME_UNIT_WEEK:604800};
   for(const v of Array.isArray(root.limits)?root.limits.slice(0,12):[]){const x=obj(v),w=obj(x.window),q=obj(x.detail);windows.push({...fromUsed(duration((number(w.duration)??0)*(units[w.timeUnit]??0)),kimiRatio(q),instant(q.resetTime,'iso')),id:'kimi:limit:'+number(w.duration)+':'+(units[w.timeUnit]??0)});}
+  // Official Kimi Code uses usages.limit_month_total for the shared monthly pool.
+  // limit_month_code is a contribution to that pool, not a separate remaining allowance.
+  const usages=obj(root.usages);
+  for(const [key,label,id]of [['limit_5h','5 小时窗口','kimi:ratio:5h'],['limit_7d','周窗口','kimi:usage'],['limit_month_total','月总额度（Kimi 与 Code 共用）','kimi:month-total']]){
+   if(!Object.prototype.hasOwnProperty.call(usages,key))continue;
+   const entry=obj(usages[key]),used=number(entry.used_ratio);
+   // Keep legacy short/weekly readings when present; add ratio-only windows otherwise.
+   if(key==='limit_5h'&&windows.some(w=>w.label==='5 小时窗口'))continue;
+   if(key==='limit_7d'&&windows.some(w=>w.id==='kimi:usage'))continue;
+   windows.push({...fromUsed(label,used!==null&&used<=1?used*100:null,instant(entry.reset_time,'iso')),id});
+  }
   const wallet=obj(root.boosterWallet),balance=obj(wallet.balance),money=obj(wallet.monthlyChargeLimit),used=obj(wallet.monthlyUsed);const currency=money.currency??used.currency;
   if(balance.type==='BOOSTER'&&number(balance.amountLeft)!==null&&['CNY','USD'].includes(currency))balances.push({label:'补充余额',currency,total:number(balance.amountLeft)!/100000000});
  }else if(id==='opencode'){
