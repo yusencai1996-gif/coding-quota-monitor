@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {SafeError} from '../src/model';
-import {OpenCodeMcp,OPENCODE_MCP_ENDPOINT,OPENCODE_MCP_VERSION} from '../src/opencode-mcp';
+import {OpenCodeMcp,OpenCodeAccessError,OPENCODE_MCP_ENDPOINT,OPENCODE_MCP_VERSION} from '../src/opencode-mcp';
 
 type Call={url:string;init:RequestInit;rpc:any;headers:Headers};
 const calls:Call[]=[];
@@ -17,6 +17,21 @@ function fake(handler:(call:Call)=>Response|Promise<Response>):typeof fetch{
   }) as typeof fetch;
 }
 const code=(expected:string)=>(error:unknown)=>error instanceof SafeError&&error.code===expected&&error.message===expected;
+
+test('OpenCode MCP distinguishes disabled workspace and forbidden access without returning server text',async()=>{
+ for(const [body,reason]of [[{error:'forbidden',message:'The Console MCP is not enabled for this workspace.'},'mcp-disabled'],[{error:'forbidden',message:'PRIVATE SERVER DETAIL'},'forbidden']] as const){
+  const mcp=new OpenCodeMcp((async()=>new Response(JSON.stringify(body),{status:403})) as typeof fetch,async()=>'SYNTHETIC');
+  await assert.rejects(mcp.listTools(),e=>e instanceof OpenCodeAccessError&&e.reason===reason&&e.message==='auth');mcp.close();
+ }
+ const huge=new OpenCodeMcp((async()=>new Response('x'.repeat(5000),{status:403})) as typeof fetch,async()=>'SYNTHETIC');await assert.rejects(huge.listTools(),e=>e instanceof OpenCodeAccessError&&e.reason==='forbidden');huge.close();
+});
+test('OpenCode MCP cancels a hanging forbidden response on deadline and close',async()=>{
+ for(const close of [false,true]){
+  let cancelled=false,started!:(v?:unknown)=>void;const ready=new Promise(r=>{started=r;});
+  const mcp=new OpenCodeMcp((async()=>new Response(new ReadableStream({start(c){c.enqueue(new TextEncoder().encode('{'));started();},cancel(){cancelled=true;}}),{status:403})) as typeof fetch,async()=>'SYNTHETIC',{timeoutMs:close?1000:20});
+  const pending=mcp.listTools();await ready;if(close)mcp.close();await assert.rejects(pending,code('timeout'));assert.equal(cancelled,true);mcp.close();
+ }
+});
 
 test('OpenCode MCP initializes once, keeps the session in memory and uses fixed safe requests',async()=>{
   const seen:Call[]=[];const mcp=new OpenCodeMcp(fake(c=>{seen.push(c);return json(c.rpc,{tools:[tool()]});}),async()=>'SYNTHETIC');

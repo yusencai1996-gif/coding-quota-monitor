@@ -58,3 +58,5 @@ import './v13.test';
 import './opencode-oauth.test';
 import './opencode-mcp.test';
 import './opencode-connection.test';
+
+import './opencode-usage.test';

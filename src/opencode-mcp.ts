@@ -7,6 +7,9 @@ type JsonObject=Record<string,unknown>;
 export interface McpTool extends JsonObject {name:string;inputSchema:JsonObject;description?:string}
 export interface McpToolResult extends JsonObject {content?:unknown[];structuredContent?:JsonObject;isError?:boolean}
 export interface OpenCodeMcpOptions {allowedReadTools?:readonly string[];timeoutMs?:number;maxPages?:number;maxTools?:number}
+export class OpenCodeAccessError extends SafeError {
+  constructor(public readonly reason:'mcp-disabled'|'forbidden'){super('auth');}
+}
 class SessionLost extends Error {}
 const object=(value:unknown):value is JsonObject=>!!value&&typeof value==='object'&&!Array.isArray(value);
 const boundedInteger=(value:number|undefined,fallback:number,max:number)=>{
@@ -117,8 +120,13 @@ export class OpenCodeMcp {
       const response=await this.fetcher(OPENCODE_MCP_ENDPOINT,{method:'POST',headers,body,signal:controller.signal,credentials:'omit',redirect:'error'});
       if(controller.signal.aborted||this.closed){void response.body?.cancel().catch(()=>{});throw new SafeError('timeout');}
       if(!response.ok){
+        if(response.status===403){
+          const reason=await this.forbiddenReason(response,controller.signal);
+          if(controller.signal.aborted||this.closed)throw new SafeError('timeout');
+          throw new OpenCodeAccessError(reason);
+        }
         void response.body?.cancel().catch(()=>{});
-        if(response.status===401||response.status===403){this.ready=false;this.session=undefined;throw new SafeError('auth');}
+        if(response.status===401){this.ready=false;this.session=undefined;throw new SafeError('auth');}
         if(response.status===404&&this.session)throw new SessionLost();
         throw new SafeError(response.status===429?'rateLimit':'network');
       }
@@ -134,6 +142,17 @@ export class OpenCodeMcp {
     try{return await Promise.race([work(),aborted]);}
     catch(error){if(error instanceof SessionLost)throw error;throw error instanceof SafeError?error:new SafeError(controller.signal.aborted?'timeout':'network');}
     finally{if(timer)clearTimeout(timer);if(onAbort)controller.signal.removeEventListener('abort',onAbort);this.pending.delete(controller);}
+  }
+  private async forbiddenReason(response:Response,signal:AbortSignal):Promise<'mcp-disabled'|'forbidden'>{
+    const reader=response.body?.getReader();if(!reader)return 'forbidden';
+    const abort=()=>{void reader.cancel().catch(()=>{});};signal.addEventListener('abort',abort,{once:true});
+    try{
+      let text='',bytes=0;const decoder=new TextDecoder();
+      while(true){if(signal.aborted)throw new SafeError('timeout');const part=await reader.read();if(signal.aborted)throw new SafeError('timeout');if(part.done)break;bytes+=part.value.byteLength;if(bytes>4096)return 'forbidden';text+=decoder.decode(part.value,{stream:true});}
+      const data=JSON.parse(text+decoder.decode());
+      return data?.error==='forbidden'&&data?.message==='The Console MCP is not enabled for this workspace.'?'mcp-disabled':'forbidden';
+    }catch(error){if(signal.aborted)throw new SafeError('timeout');return 'forbidden';}
+    finally{signal.removeEventListener('abort',abort);void reader.cancel().catch(()=>{});reader.releaseLock();}
   }
   private async readResponse(response:Response,media:string,id:number,signal:AbortSignal):Promise<unknown>{
     const reader=response.body?.getReader();if(!reader)throw new SafeError('schema');

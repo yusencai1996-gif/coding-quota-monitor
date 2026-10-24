@@ -4,6 +4,7 @@ import {mkdtemp,readFile,unlink,rmdir} from 'node:fs/promises';
 import {join} from 'node:path';
 import {request} from 'node:http';
 import {createHash} from 'node:crypto';
+import {runInNewContext} from 'node:vm';
 import {testPrefix} from './test-paths';
 import {OpenCodeOAuth,OPENCODE_OAUTH,type OpenCodeOAuthOptions} from '../src/opencode-oauth';
 import {SafeError} from '../src/model';
@@ -11,7 +12,7 @@ import {SafeError} from '../src/model';
 const cipher={available:async()=>true,encrypt:async(value:string)=>Buffer.from(Buffer.from(value).map(x=>x^197)),decrypt:async(value:Buffer)=>Buffer.from(value.map(x=>x^197)).toString()};
 const json=(value:unknown)=>new Response(JSON.stringify(value),{headers:{'Content-Type':'application/json'}});
 function deferred<T>(){let resolve!:(value:T)=>void;const promise=new Promise<T>(yes=>resolve=yes);return {promise,resolve};}
-async function callback(url:URL,headers:Record<string,string>={}){return new Promise<{status:number;body:string}>((resolve,reject)=>{const req=request(url,{headers},res=>{let body='';res.on('data',chunk=>body+=chunk);res.on('end',()=>resolve({status:res.statusCode!,body}));});req.on('error',reject);req.end();});}
+async function callback(url:URL,headers:Record<string,string>={}){return new Promise<{status:number;body:string;headers:import('node:http').IncomingHttpHeaders}>((resolve,reject)=>{const req=request(url,{headers},res=>{let body='';res.on('data',chunk=>body+=chunk);res.on('end',()=>resolve({status:res.statusCode!,body,headers:res.headers}));});req.on('error',reject);req.end();});}
 function replyUrl(authorize:URL,changes:Record<string,string>={}){const url=new URL(authorize.searchParams.get('redirect_uri')!);url.search=new URLSearchParams({state:authorize.searchParams.get('state')!,code:'SYNTHETIC-CODE',...changes}).toString();return url;}
 async function harness(extra:Partial<OpenCodeOAuthOptions>={},handler?:(url:string,init:RequestInit)=>Promise<Response>){
  const root=await mkdtemp(testPrefix('oauth-unit-')),opened=deferred<URL>();
@@ -64,6 +65,35 @@ test('OpenCode callback rejects forged state, issuer, duplicate parameters, path
   assert.equal((await callback(replyUrl(url))).status,200);await started;
   assert.equal(h.calls.filter(call=>call.url===OPENCODE_OAUTH.token).length,1);
  }finally{await h.cleanup();}
+});
+
+test('OpenCode callback HTML clears sensitive query parameters under a fixed CSP without reflecting requests',async()=>{
+ const cases=['received','invalid','declined'] as const;
+ for(const kind of cases){
+  const h=await harness();
+  try{
+   const started=h.oauth.begin(),settled=kind==='received'?started:assert.rejects(started,SafeError),authorize=await h.opened;
+   const url=replyUrl(authorize,{code:'PRIVATE-CALLBACK-CODE'});
+   if(kind==='invalid')url.searchParams.set('state','PRIVATE-INVALID-STATE');
+   if(kind==='declined'){url.searchParams.delete('code');url.searchParams.set('error','access_denied');url.searchParams.set('error_description','PRIVATE-DESCRIPTION-<script>alert(1)</script>');url.searchParams.set('error_uri','https://private.invalid/PRIVATE-ERROR-URI');}
+   const response=await callback(url);
+   assert.equal(response.status,kind==='received'?200:400);
+   assert.equal(response.headers['content-type'],'text/html; charset=utf-8');assert.equal(response.headers['cache-control'],'no-store');assert.equal(response.headers['referrer-policy'],'no-referrer');assert.equal(response.headers['x-content-type-options'],'nosniff');assert.equal(response.headers.location,undefined);
+   assert.match(response.body,/<html lang="zh-CN">/);
+   const title=/<title>(.*?)<\/title>/.exec(response.body)?.[1];assert.ok(title?.includes(kind==='received'?'授权已返回':kind==='invalid'?'回调无效':'授权未完成'));
+   for(const sensitive of [url.toString(),authorize.searchParams.get('state')!,'PRIVATE-CALLBACK-CODE','PRIVATE-INVALID-STATE','PRIVATE-DESCRIPTION','PRIVATE-ERROR-URI','access_denied'])assert.ok(!response.body.includes(sensitive));
+   assert.ok(!/<(?:script|link|img|iframe)\b[^>]*(?:src|href)\s*=/i.test(response.body));
+   const scripts=[...response.body.matchAll(/<script>(.*?)<\/script>/gs)];assert.equal(scripts.length,1);
+   const script=scripts[0][1],digest=createHash('sha256').update(script).digest('base64');
+   const csp=response.headers['content-security-policy'];assert.equal(csp,`default-src 'none'; script-src 'sha256-${digest}'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`);
+   const location=new URL(url);let replaced=0;
+   runInNewContext(script,{history:{replaceState:(state:unknown,unused:string,path:string)=>{assert.equal(state,null);assert.equal(unused,'');assert.equal(path,'/oauth/complete');location.href=new URL(path,location).href;replaced++;}}},{timeout:100});
+   assert.equal(replaced,1);assert.equal(location.pathname,'/oauth/complete');assert.equal(location.search,'');assert.equal(location.origin,url.origin);
+   runInNewContext(script,{history:{replaceState:()=>{throw new Error('disabled');}}},{timeout:100});
+   if(kind==='invalid'){assert.equal(h.oauth.snapshot().status,'pending');h.oauth.cancel();}
+   await settled;assert.equal(h.oauth.snapshot().status,kind==='received'?'connected':'error');
+  }finally{await h.cleanup();}
+ }
 });
 
 test('OpenCode rejects service body contents, oversized responses and missing refresh tokens without exposing details',async()=>{

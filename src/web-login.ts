@@ -2,6 +2,7 @@ import {BrowserWindow,safeStorage,net,shell,type Session} from 'electron';
 import {OpenCodeOAuth} from './opencode-oauth';
 import {OpenCodeMcp} from './opencode-mcp';
 import {OpenCodeConnection} from './opencode-connection';
+import type {OpenCodeUsageSummary} from './opencode-usage';
 import {readFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {atomicWrite} from './storage';
@@ -14,10 +15,10 @@ import {persistentSession} from './web-session';
 import {readBounded} from './opencode-history';
 import {deepSeekHistoryURL,parseDeepSeekSeries} from './deepseek-history';
 
-export interface WebConnectionState {status:string;history?:TokenHistory;coverage:string;pages?:number;records?:number}
+export interface WebConnectionState {status:string;history?:TokenHistory;coverage:string;pages?:number;records?:number;usage?:OpenCodeUsageSummary}
 const IDS=['deepseek'] as const;
 export class WebLogin {
- states:Record<WebProvider,WebConnectionState>={deepseek:{status:'not-connected',coverage:'官方按API Key月报，Token合计不包含请求次数'},opencode:{status:'not-connected',coverage:'在默认浏览器授权；统计接口适配中'}};
+ states:Record<WebProvider,WebConnectionState>={deepseek:{status:'not-connected',coverage:'官方按API Key月报，Token合计不包含请求次数'},opencode:{status:'not-connected',coverage:'在默认浏览器授权，读取当前账号的官方期间合计'}};
 
  private windows=new Map<WebProvider,BrowserWindow>();private sessions=new Map<WebProvider,Session>();
  private cleanups=new Map<WebProvider,Promise<void>>();private enabled:Partial<Record<WebProvider,boolean>>={};
@@ -29,7 +30,7 @@ export class WebLogin {
  private consoleConnection:OpenCodeConnection;
  constructor(private publish:()=>void,private root:string){
   const auth=new OpenCodeOAuth({root,fetcher:net.fetch as typeof fetch,openExternal:url=>shell.openExternal(url),crypto:{available:async()=>process.platform==='win32'&&await safeStorage.isAsyncEncryptionAvailable(),encrypt:v=>safeStorage.encryptStringAsync(v),decrypt:async v=>(await safeStorage.decryptStringAsync(v)).result},onChange:()=>this.consoleConnection?.authorizationChanged()});
-  this.consoleConnection=new OpenCodeConnection(auth,()=>new OpenCodeMcp(net.fetch as typeof fetch,()=>auth.accessToken()),state=>{this.states.opencode=state;this.publish();});
+  this.consoleConnection=new OpenCodeConnection(auth,()=>new OpenCodeMcp(net.fetch as typeof fetch,()=>auth.accessToken(),{allowedReadTools:['get_usage']}),state=>{this.states.opencode=state;this.publish();});
  }
  private version(id:'deepseek'){return this.versions.get(id)??0;}
  private session(id:'deepseek'){let value=this.sessions.get(id);if(value)return value;value=persistentSession(id);value.setPermissionRequestHandler((_w,_p,done)=>done(false));value.setPermissionCheckHandler(()=>false);value.on('will-download',e=>e.preventDefault());this.sessions.set(id,value);return value;}

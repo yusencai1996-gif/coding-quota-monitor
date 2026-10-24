@@ -33,6 +33,8 @@ interface Login {
  resolve:()=>void;reject:(error:SafeError)=>void;promise:Promise<void>;
 }
 const MAX_BODY=64*1024;
+const CALLBACK_CLEANUP="try{history.replaceState(null,'','/oauth/complete');}catch{}";
+const CALLBACK_CSP=`default-src 'none'; script-src 'sha256-${createHash('sha256').update(CALLBACK_CLEANUP).digest('base64')}'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`;
 const secret=(v:unknown,max=16384):v is string=>typeof v==='string'&&v.length>0&&v.length<=max&&!/[\x00-\x20\x7f]/.test(v);
 const safe=(e:unknown)=>e instanceof SafeError?e:new SafeError('network');
 const aborted=()=>new SafeError('auth');
@@ -154,21 +156,27 @@ export class OpenCodeOAuth {
   }catch(e){this.finish(login,safe(e));}
   return promise;
  }
- private reply(res:ServerResponse,status:number,message:string){res.writeHead(status,{'Content-Type':'text/plain; charset=utf-8','Cache-Control':'no-store','Content-Security-Policy':"default-src 'none'; frame-ancestors 'none'",'Referrer-Policy':'no-referrer','Connection':'close'});res.end(message);}
+ private reply(res:ServerResponse,status:number,kind:'received'|'invalid'|'declined'){
+  const title={received:'OpenCode 授权已返回',invalid:'OpenCode 授权回调无效',declined:'OpenCode 授权未完成'}[kind];
+  const message={received:'已收到授权回调，请返回多模型额度监控台查看连接结果。',invalid:'此授权回调未通过验证，请返回应用重新连接。',declined:'本次授权未完成，请返回应用查看状态或重新连接。'}[kind];
+  // Only fixed copy and a fixed script enter this page; callback URLs and parameters are never reflected.
+  res.writeHead(status,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','Content-Security-Policy':CALLBACK_CSP,'Referrer-Policy':'no-referrer','X-Content-Type-Options':'nosniff','Connection':'close'});
+  res.end(`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title} · 多模型额度监控台</title><script>${CALLBACK_CLEANUP}</script></head><body><main><h1>${title}</h1><p>${message}</p><p>你可以关闭此页面。</p><noscript><p>浏览器未启用 JavaScript，地址栏中的临时授权参数未清除，请关闭此页面。</p></noscript></main></body></html>`);
+ }
  private async callback(login:Login,req:IncomingMessage,res:ServerResponse){
   const expected=new URL(login.redirectUri||'http://127.0.0.1/invalid');
-  if(this.login!==login||login.consumed||req.method!=='GET'||req.socket.remoteAddress!=='127.0.0.1'||req.headers.host!==expected.host||req.headers.origin!==undefined&&req.headers.origin!==expected.origin||!req.url?.startsWith('/')||req.url.startsWith('//')){this.reply(res,400,'Invalid authorization callback.');return;}
-  let url:URL;try{url=new URL(req.url,expected.origin);}catch{this.reply(res,400,'Invalid authorization callback.');return;}
+  if(this.login!==login||login.consumed||req.method!=='GET'||req.socket.remoteAddress!=='127.0.0.1'||req.headers.host!==expected.host||req.headers.origin!==undefined&&req.headers.origin!==expected.origin||!req.url?.startsWith('/')||req.url.startsWith('//')){this.reply(res,400,'invalid');return;}
+  let url:URL;try{url=new URL(req.url,expected.origin);}catch{this.reply(res,400,'invalid');return;}
   const keys=[...url.searchParams.keys()];
   const state=url.searchParams.get('state');
   if(url.origin!==expected.origin||url.pathname!==expected.pathname||keys.some((key,index)=>keys.indexOf(key)!==index||!['state','code','error','error_description','error_uri','iss'].includes(key))||!state||Buffer.byteLength(state)!==Buffer.byteLength(login.state)||!timingSafeEqual(Buffer.from(state),Buffer.from(login.state))||(url.searchParams.has('iss')&&url.searchParams.get('iss')!==OPENCODE_OAUTH.issuer)){
-   this.reply(res,400,'Invalid authorization callback.');return;
+   this.reply(res,400,'invalid');return;
   }
   const code=url.searchParams.get('code'),error=url.searchParams.get('error');
-  if((code!==null)===(error!==null)||code!==null&&!secret(code,8192)){this.reply(res,400,'Invalid authorization callback.');return;}
+  if((code!==null)===(error!==null)||code!==null&&!secret(code,8192)){this.reply(res,400,'invalid');return;}
   login.consumed=true;
-  if(error!==null){this.reply(res,400,'Authorization was not completed.');this.finish(login,new SafeError('auth'));return;}
-  this.reply(res,200,'Authorization received. You can return to Coding Quota Monitor.');
+  if(error!==null){this.reply(res,400,'declined');this.finish(login,new SafeError('auth'));return;}
+  this.reply(res,200,'received');
   try{
    const clientId=login.clientId;if(!clientId)throw new SafeError('auth');
    const data=await this.form(OPENCODE_OAUTH.token,{grant_type:'authorization_code',client_id:clientId,code:code!,code_verifier:login.verifier,redirect_uri:login.redirectUri,resource:OPENCODE_OAUTH.resource},login.controller.signal);
