@@ -60,3 +60,7 @@ import './opencode-mcp.test';
 import './opencode-connection.test';
 
 import './opencode-usage.test';
+
+import './opencode-export.test';
+
+import './opencode-heatmap.test';

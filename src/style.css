@@ -24,3 +24,5 @@ html:has(#settings[open]),body:has(#settings[open]){overflow:hidden}
 .source-path,#data-message{overflow-wrap:anywhere;word-break:break-word;max-width:100%;}input.source-path{width:100%;box-sizing:border-box;}
 
 .console-usage{display:grid;gap:16px;margin:16px 0}.console-usage-period{border-top:1px solid var(--line);padding-top:12px}.console-usage-period h4{font-size:14px;margin:0 0 8px}.console-usage-period dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 16px;margin:0}.console-usage-period dl div{min-width:0}.console-usage-period dt{font-size:11px;color:var(--muted)}.console-usage-period dd{font-size:16px;margin:2px 0 0;overflow-wrap:anywhere}
+
+.console-summary{margin-top:12px}.console-summary>summary{cursor:pointer;color:var(--muted);padding:6px 0}

@@ -44,3 +44,12 @@ export function parseOpenCodeUsage(result:McpToolResult,expectedRange:OpenCodeUs
   return {userId,period:{range:expectedRange,requests:count(value.requests),inputTokens:count(value.input_tokens),outputTokens:count(value.output_tokens),cacheReadTokens:count(value.cache_read_tokens),cacheWriteTokens:count(value.cache_write_tokens),costUsd:cost===0?0:cost}};
  }catch{throw schema();}
 }
+
+/** Only identity keys used to bind the public daily export; never expose this object to renderer. */
+export function parseOpenCodeContext(result:McpToolResult):{userId:string;orgId:string} {
+ try{
+  const value=payload(result),user=object(value.user)?value.user:{},workspace=object(value.workspace)?value.workspace:{};
+  if(typeof user.id!=='string'||!user.id||user.id.length>256||/[\s\p{Cc}\p{Cf}]/u.test(user.id)||typeof workspace.id!=='string'||workspace.id.length>256||!/^(wrk_|org_)[A-Za-z0-9_-]+$/.test(workspace.id))throw schema();
+  return {userId:user.id,orgId:workspace.id};
+ }catch{throw schema();}
+}

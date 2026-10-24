@@ -8,6 +8,7 @@ import {IDS,NAMES,defaults,settings,provider,safeCode,SafeError,type Settings} f
 import {KeyStore,atomicWrite} from './storage';
 import {Scheduler} from './scheduler';
 import {requestQuota} from './adapters';
+import {requestOpenCodeExport} from './opencode-export';
 import {trustedSender} from './security';
 import {commitPreferences} from './preferences';
 import{LowQuotaNotices}from'./low-quota-notices';import{nativeDelivery,type DeliveryResult}from'./notification-delivery';
@@ -62,7 +63,7 @@ if(!app.requestSingleInstanceLock()){void startupLog.record('duplicate-exit').fi
  keys=new KeyStore(join(DATA,'keys'),{available:async()=>process.platform==='win32'&&await safeStorage.isAsyncEncryptionAvailable(),encrypt:v=>safeStorage.encryptStringAsync(v),decrypt:async v=>(await safeStorage.decryptStringAsync(v)).result});
  for(const id of IDS)if(id!=='codex')presence[id]=await keys.has(id);
  notices=new NotificationLedger(join(DATA,'notifications-v1.json'),sendNotification);lowNotices=new LowQuotaNotices(join(DATA,'low-quota-notices-v1.json'),sendNotification);
- health=new HealthMonitor(publish,net.fetch as typeof fetch);webLogin=new WebLogin(publish,DATA);
+ health=new HealthMonitor(publish,net.fetch as typeof fetch);webLogin=new WebLogin(publish,DATA,async(orgId,userId,signal)=>requestOpenCodeExport(await keys.readForRequest('opencode'),orgId,userId,signal,net.fetch as typeof fetch));
  historyStore=new HistoryStore(join(DATA,'history-v1'));auxiliary=new Auxiliary(id=>credentials(id,keys,sources.codex),(id,kind,c,signal)=>queryActivity(id,kind,c,signal,net.fetch as typeof fetch),historyStore,publish);
  scheduler=new Scheduler(async(id,signal)=>{if(id==='codex'||id==='glm'){const c=await credentials(id,keys,sources.codex);if(signal.aborted)throw new SafeError('unconfigured');auxiliary.observeScope(id,c.scope);auxiliary.setNoticeScope(id,c.noticeScope);const result=await requestQuota(id,c.key,signal,net.fetch as typeof fetch,c.account);if(!signal.aborted)quotaScopes[id]=c.noticeScope??c.scope;return result;}const key=await keys.readForRequest(id),result=await requestQuota(id,key,signal,net.fetch as typeof fetch);if(!signal.aborted)quotaScopes[id]=accountScope('notice:'+id,key);return result;},()=>{publish();observeLowQuota();});
  session.defaultSession.setPermissionRequestHandler((_w,_p,callback)=>callback(false));session.defaultSession.setPermissionCheckHandler(()=>false);
@@ -99,8 +100,8 @@ if(!app.requestSingleInstanceLock()){void startupLog.record('duplicate-exit').fi
    config=next;window.setAlwaysOnTop(config.pinned);scheduler.configure(config);auxiliary.configure(config);publish();
   });settingsChain=operation.catch(()=>{});return operation;
  });
- register('quota:key-save',async(id:unknown,value:unknown)=>{const p=provider(id);if(p==='codex')throw new SafeError('schema');await keys.save(p,value);presence[p]=true;scheduler.invalidate(p);auxiliary.invalidate(p);void scheduler.refresh(p);void auxiliary.refresh(p);});
- register('quota:key-remove',async(id:unknown)=>{const p=provider(id);if(p==='codex')throw new SafeError('schema');await keys.remove(p);presence[p]=false;scheduler.invalidate(p);auxiliary.invalidate(p);void scheduler.refresh(p);void auxiliary.refresh(p);});register('quota:hide',()=>window.hide());
+ register('quota:key-save',async(id:unknown,value:unknown)=>{const p=provider(id);if(p==='codex')throw new SafeError('schema');await keys.save(p,value);presence[p]=true;webLogin.keyChanged(p);scheduler.invalidate(p);auxiliary.invalidate(p);void scheduler.refresh(p);void auxiliary.refresh(p);});
+ register('quota:key-remove',async(id:unknown)=>{const p=provider(id);if(p==='codex')throw new SafeError('schema');await keys.remove(p);presence[p]=false;webLogin.keyChanged(p);scheduler.invalidate(p);auxiliary.invalidate(p);void scheduler.refresh(p);void auxiliary.refresh(p);});register('quota:hide',()=>window.hide());
  await window.loadURL(uiUrl);void startupLog.record('window-loaded');scheduler.configure(config);auxiliary.configure(config);void historyStore.prune().then(publish).catch(()=>{});await webLogin.initialize();
  powerMonitor.on('resume',()=>{scheduler.all();auxiliary.all();{health?.start();webLogin?.refresh("deepseek");webLogin?.refresh("opencode");void refreshLocal();}});
  scheduler.all();auxiliary.all();health.start();webLogin.start();void refreshLocal();localTimer=setInterval(()=>void refreshLocal(),900000);if(!process.argv.includes('--hidden')||profile.firstRun){show();if(profile.firstRun)window.webContents.send('quota:update',{...publicState(),openSettings:true});}

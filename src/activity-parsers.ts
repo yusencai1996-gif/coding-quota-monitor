@@ -15,7 +15,7 @@ export function parseHistory(id:'codex'|'glm',input:unknown,now=Date.now()):Toke
 }
 // Source dates are calendar labels, not timezone-converted instants. Missing rows never become zero.
 export function mergeHistory(previous:TokenHistory|undefined,next:TokenHistory,now=Date.now()):TokenHistory {
- const today=calendarToday(now),cutoff=shiftDate(today,-365),map=new Map<string,DayBucket>();
+ const today=next.sourceTimezone==='UTC'?new Date(now).toISOString().slice(0,10):calendarToday(now),cutoff=shiftDate(today,-365),map=new Map<string,DayBucket>();
  for(const row of [...(previous?.source===next.source?previous.days:[]),...next.days])if(dateOnly(row.date)&&row.date>=cutoff&&row.date<=today&&tokens(row.tokens)!==null)map.set(row.date,{date:row.date,tokens:row.tokens,...(row.partial?{partial:true}:{})});
  return {...next,days:[...map].sort(([a],[b])=>a.localeCompare(b)).slice(-366).map(([,row])=>row)};
 }
@@ -35,7 +35,7 @@ export function parseCards(id:'codex'|'glm',input:unknown,now=Date.now()):ResetC
  const complete=d.fiveHourResets.length<=500&&d.weekResets.length<=500,known=cards.every(c=>c.available!==null)&&complete;return {availableCount:known?cards.filter(c=>c.available).length:null,cards,detailsComplete:known,updatedAt:now};
 }
 export function aggregate(history:TokenHistory,mode:'day'|'week'|'month',now=Date.now()):AggregateCell[]{
- const today=calendarToday(now),first=shiftDate(today,-365),daily=new Map(history.days.map(d=>[d.date,d.tokens])),groups=new Map<string,AggregateCell>();
+ const today=history.sourceTimezone==='UTC'?new Date(now).toISOString().slice(0,10):calendarToday(now),first=shiftDate(today,-365),daily=new Map(history.days.map(d=>[d.date,d.tokens])),groups=new Map<string,AggregateCell>();
  for(let date=first;date<=today;date=shiftDate(date,1)){
   const day=new Date(date+'T00:00:00Z');const start=mode==='day'?date:mode==='week'?shiftDate(date,-((day.getUTCDay()+6)%7)):date.slice(0,7)+'-01';
   const end=mode==='day'?date:mode==='week'?shiftDate(start,6):new Date(Date.UTC(day.getUTCFullYear(),day.getUTCMonth()+1,0)).toISOString().slice(0,10);

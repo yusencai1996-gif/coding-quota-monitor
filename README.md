@@ -23,7 +23,7 @@
 | Kimi | 编程套餐额度、接口提供的月共享额度；可选本机 Token 统计 | 套餐 Key；本人选择的 Kimi Code / ZCode 记录 |
 | Codex | 官方账号额度、附加模型额度、支持的活动与重置卡信息 | 本人明确启用的登录文件，只读现有访问令牌 |
 | DeepSeek | API 余额、可选官方网页登录统计 | API Key；在本应用独立登录 |
-| OpenCode Go | 套餐额度；本人官方用量的 24 小时、7 天、30 天及累计合计 | 编程套餐 Key；默认浏览器 OAuth |
+| OpenCode Go | 套餐额度；本人日／周／月 Token 热力图；可展开期间合计 | 具有 Usage Read 权限的 Key；默认浏览器 OAuth |
 
 各平台独立查询，未配置或缺少本机客户端不会阻碍其它平台。接口没有提供的数据保持未知，不以零值、余额或倒计时推算用量。重置卡只查看，不自动使用。
 
@@ -35,9 +35,11 @@
 4. DeepSeek 网页统计在本应用独立窗口登录。OpenCode 点击“在浏览器连接 OpenCode”，在默认浏览器完成官方登录并选择工作区。**不需要上传或复制任何已有数据目录、Cookie 或登录文件。**
 5. 自启与通知默认关闭，按需启用。关闭主窗口会收起到托盘，从托盘菜单“退出”才会正常结束。
 
-OpenCode 使用官方 Console OAuth（PKCE）和本机临时回调。若提示工作区未启用 Console MCP，请在 [OpenCode Console](https://opencode.ai/console) 的 **Integrations → Console MCP → Set up → Enable** 中确认启用，再刷新平台；这会将 Console MCP 加入该工作区所有成员的 OpenCode 托管配置。应用只调用固定的 `get_usage` 读取本人用量，不执行模型、成员或预算管理操作。
+OpenCode 使用官方 Console OAuth（PKCE）和本机临时回调。若提示工作区未启用 Console MCP，请在 [OpenCode Console](https://opencode.ai/console) 的 **Integrations → Console MCP → Set up → Enable** 中确认启用，再刷新平台；这会将 Console MCP 加入该工作区所有成员的 OpenCode 托管配置。应用只调用固定的 `get_usage`、`get_context` 读取本人用量和已授权工作区，不执行模型、成员或预算管理操作。
 
-OpenCode 统计分别显示请求、输入、输出、缓存读取、缓存写入和官方费用。期间会重叠，不能相加；接口没有按天历史，四类 Token 不合并推算，也不把预算或费用当作 Go 剩余额度。官方统计每 15 分钟更新，也可手动刷新；网络失败保留注明时间的旧读数。Key 套餐额度按设置的刷新间隔独立查询。
+OpenCode 热力图使用官方公开按日导出接口，仅读取已授权工作区的本人记录；Key 需要 Usage Read 权限及相应工作区角色。导出最多近 90 天，按 UTC 自然日汇总并可能滞后；日、周、月和悬停读数复用其它平台的组件，默认以万 / M / 亿显示，缺日保持未知，不补零。总 Token 按官网口径合计输入、输出、缓存读取、5 分钟和 1 小时缓存写入，不另加 reasoning。包含各 provider/model，不称作 Go 专属记录。
+
+“查看期间合计”保留最近 24 小时、7 天、30 天和累计的独立字段及官方费用；期间会重叠，不能相加，也不把预算或费用当作 Go 剩余额度。官方统计每 15 分钟更新，也可手动刷新；网络失败保留注明时间的旧读数。Key 套餐额度按设置的刷新间隔独立查询。
 
 启动、自动刷新和“刷新此平台”不会主动要求浏览器登录。授权失效时，请主动点击连接按钮重新授权。授权记录通过 Windows 加密存储保存在当前用户数据目录的 `opencode-oauth.sealed`；“取消授权 / 断开连接”清除本应用授权并尽力通知官方撤销，不退出默认浏览器账号。
 

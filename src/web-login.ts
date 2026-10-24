@@ -15,7 +15,7 @@ import {persistentSession} from './web-session';
 import {readBounded} from './opencode-history';
 import {deepSeekHistoryURL,parseDeepSeekSeries} from './deepseek-history';
 
-export interface WebConnectionState {status:string;history?:TokenHistory;coverage:string;pages?:number;records?:number;usage?:OpenCodeUsageSummary}
+export interface WebConnectionState {status:string;history?:TokenHistory;coverage:string;pages?:number;records?:number;usage?:OpenCodeUsageSummary;historyStatus?:string}
 const IDS=['deepseek'] as const;
 export class WebLogin {
  states:Record<WebProvider,WebConnectionState>={deepseek:{status:'not-connected',coverage:'官方按API Key月报，Token合计不包含请求次数'},opencode:{status:'not-connected',coverage:'在默认浏览器授权，读取当前账号的官方期间合计'}};
@@ -28,9 +28,9 @@ export class WebLogin {
  private dsAuth?:string;private dsFull=false;
  private closing=false;
  private consoleConnection:OpenCodeConnection;
- constructor(private publish:()=>void,private root:string){
+ constructor(private publish:()=>void,private root:string,readDaily?:(orgId:string,userId:string,signal:AbortSignal)=>Promise<TokenHistory>){
   const auth=new OpenCodeOAuth({root,fetcher:net.fetch as typeof fetch,openExternal:url=>shell.openExternal(url),crypto:{available:async()=>process.platform==='win32'&&await safeStorage.isAsyncEncryptionAvailable(),encrypt:v=>safeStorage.encryptStringAsync(v),decrypt:async v=>(await safeStorage.decryptStringAsync(v)).result},onChange:()=>this.consoleConnection?.authorizationChanged()});
-  this.consoleConnection=new OpenCodeConnection(auth,()=>new OpenCodeMcp(net.fetch as typeof fetch,()=>auth.accessToken(),{allowedReadTools:['get_usage']}),state=>{this.states.opencode=state;this.publish();});
+  this.consoleConnection=new OpenCodeConnection(auth,()=>new OpenCodeMcp(net.fetch as typeof fetch,()=>auth.accessToken(),{allowedReadTools:['get_usage','get_context']}),state=>{this.states.opencode=state;this.publish();},readDaily);
  }
  private version(id:'deepseek'){return this.versions.get(id)??0;}
  private session(id:'deepseek'){let value=this.sessions.get(id);if(value)return value;value=persistentSession(id);value.setPermissionRequestHandler((_w,_p,done)=>done(false));value.setPermissionCheckHandler(()=>false);value.on('will-download',e=>e.preventDefault());this.sessions.set(id,value);return value;}
@@ -41,6 +41,7 @@ export class WebLogin {
   this.publish();
  }
  start(){void this.consoleConnection.open(false);for(const id of IDS)if(this.enabled[id])void this.open(id,false).catch(()=>{this.states[id].status='storage';this.publish();});}
+ keyChanged(id:string){if(id==='opencode')this.consoleConnection.invalidateDaily();}
  private invalidate(id:'deepseek',status='login-required'){
   this.versions.set(id,this.version(id)+1);this.running.get(id)?.abort();this.running.delete(id);clearTimeout(this.timers.get(id));this.timers.delete(id);
   this.dsAuth=undefined;this.dsFull=false;
