@@ -2,7 +2,9 @@
 
 面向 **Windows 11 x64（Intel / AMD）** 的本地托盘工具，用一个面板查看多个平台额度与支持的用量统计。默认不读取本机登录或会话文件，选择来源并保存读取授权后才启用。
 
-[下载 v1.3.0-beta.2](https://github.com/yusencai1996-gif/coding-quota-monitor/releases/download/v1.3.0-beta.2/QuotaMonitor-1.3.0-beta.2-windows-x64.zip) · [所有版本](https://github.com/yusencai1996-gif/coding-quota-monitor/releases) · [使用说明](PORTABLE-V1.3.md)
+[下载 v1.3.0-beta.4](https://github.com/yusencai1996-gif/coding-quota-monitor/releases/download/v1.3.0-beta.4/QuotaMonitor-1.3.0-beta.4-windows-x64.zip) · [所有版本](https://github.com/yusencai1996-gif/coding-quota-monitor/releases) · [使用说明](PORTABLE-V1.3.md)
+
+v1.3.0-beta.4 包含 OpenCode 浏览器授权与热力图、Kimi 独立月额度登录，以及后台页面释放和停用后暂停采集的修复。更新前请正常退出旧版，保留自己的数据目录。
 
 目前为测试版。Windows 10、ARM 以及每台电脑的自然重启与通知送达不在已验证范围内。
 
@@ -20,7 +22,7 @@
 | --- | --- | --- |
 | GLM | 编程套餐额度、MCP 工具额度、支持的日活动与重置卡到期信息 | 国内站个人套餐 Key |
 | MiniMax | 编程套餐额度；可选本机 Token 统计 | 国内站套餐 Key；本人选择的 ZCode 记录 |
-| Kimi | 编程套餐额度、接口提供的月共享额度；可选本机 Token 统计 | 套餐 Key；本人选择的 Kimi Code / ZCode 记录 |
+| Kimi | 5小时及接口提供的周额度；会员月总额度；可选本机Token统计 | 套餐Key；本应用内独立Kimi网页登录；本人选择的Kimi Code / ZCode记录 |
 | Codex | 官方账号额度、附加模型额度、支持的活动与重置卡信息 | 本人明确启用的登录文件，只读现有访问令牌 |
 | DeepSeek | API 余额、可选官方网页登录统计 | API Key；在本应用独立登录 |
 | OpenCode Go | 套餐额度；本人日／周／月 Token 热力图；可展开期间合计 | 具有 Usage Read 权限的 Key；默认浏览器 OAuth |
@@ -42,6 +44,10 @@ OpenCode 热力图使用官方公开按日导出接口，仅读取已授权工�
 “查看期间合计”保留最近 24 小时、7 天、30 天和累计的独立字段及官方费用；期间会重叠，不能相加，也不把预算或费用当作 Go 剩余额度。官方统计每 15 分钟更新，也可手动刷新；网络失败保留注明时间的旧读数。Key 套餐额度按设置的刷新间隔独立查询。
 
 启动、自动刷新和“刷新此平台”不会主动要求浏览器登录。授权失效时，请主动点击连接按钮重新授权。授权记录通过 Windows 加密存储保存在当前用户数据目录的 `opencode-oauth.sealed`；“取消授权 / 断开连接”清除本应用授权并尽力通知官方撤销，不退出默认浏览器账号。
+
+Kimi月额度来自独立官网登录，在Kimi平台内点击“登录Kimi会员额度”。所有会员功能共享月池，编程Key与网页登录是独立来源，请使用同一账号。月额度低于或等于10%时遵守总通知开关。新套餐未返回周限额时不显示周窗口，旧套餐仍兼容。
+
+关闭某个平台的“启用监控”后，该平台的额度、官方统计、健康状态和相关本机采集会暂停，在途查询会取消；已加密的登录授权保留，再次启用可恢复查询。选择“登出”或“断开连接”才清除对应授权。收起主面板后停止界面重绘；DeepSeek完成静默登录恢复、Kimi读完后台月额度后会释放官网页面。没有完成登录的后台恢复页面最多保留30秒，避免官网长期占用内存。
 
 ## 权限与数据
 
@@ -79,7 +85,7 @@ npm run pack
 npm run package
 ```
 
-ZIP 与 `SHA256.json` 位于 `release/v1.3.0-beta.2/`。测试只用合成资料，默认临时目录来自 `os.tmpdir()`；也可把 `QUOTA_TEST_TEMP` 设置为自己选择的绝对目录。测试不读取实际 Key、登录或系统自启配置。生成演示截图需先完成 `npm run pack`，再运行 `npm run screenshots`；它使用独立数据根，不修改正式程序入口。
+ZIP 与 `SHA256.json` 位于 `release/v1.3.0-beta.4/`。测试只用合成资料，默认临时目录来自 `os.tmpdir()`；也可把 `QUOTA_TEST_TEMP` 设置为自己选择的绝对目录。测试不读取实际 Key、登录或系统自启配置。生成演示截图需先完成 `npm run pack`，再运行 `npm run screenshots`；它使用独立数据根，不修改正式程序入口。
 
 ## 局限
 

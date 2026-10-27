@@ -193,7 +193,8 @@ export class OpenCodeOAuth {
   login.state='';login.verifier='';
   if(error){this.publish({status:'error',error:error.code});login.reject(error);}else{this.publish({status:'connected'});login.resolve();}
  }
- cancel():void{if(this.login){++this.epoch;this.finish(this.login,aborted());}}
+ // Stopping monitoring cancels active authorization/refresh work, retaining only the sealed record.
+ cancel():void{++this.epoch;if(this.login)this.finish(this.login,aborted());for(const request of this.requests)request.abort();this.token=undefined;this.refreshing=undefined;}
  async accessToken(signal?:AbortSignal):Promise<string>{
   if(this.closed||this.loggingOut||this.opening||this.login||signal?.aborted)throw aborted();
   const epoch=this.epoch;

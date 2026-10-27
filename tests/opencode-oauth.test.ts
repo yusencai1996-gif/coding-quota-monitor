@@ -205,3 +205,13 @@ test('OpenCode logout wins over late refresh and close preserves existing encryp
   await h.oauth.close();await assert.rejects(h.oauth.begin(),SafeError);await assert.rejects(h.oauth.accessToken(),SafeError);
  }finally{await h.cleanup();}
 });
+
+test('OpenCode monitoring pause cancels refresh without deleting encrypted authorization',async()=>{
+ let now=1_000_000;const refreshing=deferred<void>(),late=deferred<Response>();
+ const h=await harness({now:()=>now},async(url,init)=>{
+  if(url===OPENCODE_OAUTH.register)return json({client_id:'SYNTHETIC-CLIENT'});
+  if(new URLSearchParams(String(init.body)).get('grant_type')==='refresh_token'){refreshing.resolve();return late.promise;}
+  return json({access_token:'SYNTHETIC-ACCESS',refresh_token:'SYNTHETIC-REFRESH',token_type:'Bearer',expires_in:60});
+ });
+ try{const started=h.oauth.begin();await callback(replyUrl(await h.opened));await started;now+=60000;const access=h.oauth.accessToken(),rejected=assert.rejects(access,SafeError);await refreshing.promise;h.oauth.cancel();await rejected;late.resolve(json({access_token:'LATE-ACCESS',refresh_token:'LATE-REFRESH',token_type:'Bearer',expires_in:3600}));await new Promise(r=>setImmediate(r));assert.equal(await h.oauth.has(),true);const stored=JSON.parse(await cipher.decrypt(await readFile(join(h.root,'opencode-oauth.sealed'))));assert.equal(stored.refreshToken,'SYNTHETIC-REFRESH');assert.equal(h.calls.filter(c=>c.url===OPENCODE_OAUTH.revoke).length,0);}finally{await h.cleanup();}
+});

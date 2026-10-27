@@ -5,6 +5,8 @@ contextBridge.exposeInMainWorld('quota',{
  saveSources:(value:unknown)=>ipcRenderer.invoke('quota:sources',value),
  pickData:()=>ipcRenderer.invoke('quota:data-pick'),
  state:()=>ipcRenderer.invoke('quota:state'),
+ kimiMembershipOpen:()=>ipcRenderer.invoke('quota:kimi-membership-open'),
+ kimiMembershipLogout:()=>ipcRenderer.invoke('quota:kimi-membership-logout'),
  testNotification:()=>ipcRenderer.invoke('quota:notification-test'),
  refresh:(id:string)=>ipcRenderer.invoke('quota:refresh',id),
  settings:(value:unknown)=>ipcRenderer.invoke('quota:settings',value),

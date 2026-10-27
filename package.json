@@ -1,6 +1,6 @@
 {
   "name": "coding-quota-monitor",
-  "version": "1.3.0-beta.2",
+  "version": "1.3.0-beta.4",
   "private": true,
   "description": "Windows 多平台额度监控台",
   "main": "dist/main.cjs",
@@ -27,7 +27,7 @@
     "appId": "local.coding-quota-monitor",
     "productName": "多模型额度监控台",
     "directories": {
-      "output": "release/v1.3.0-beta.2/build"
+      "output": "release/v1.3.0-beta.4/build"
     },
     "files": [
       "dist/main.cjs",

@@ -9,6 +9,7 @@ export interface OpenCodeConnectionState {status:string;coverage:string;usage?:O
 interface Authorization {
  has():Promise<boolean>;begin():Promise<void>;logout():Promise<void>;close():Promise<void>;
  snapshot():OpenCodeOAuthSnapshot;
+ cancel?():void;
 }
 interface ConsoleClient {listTools():Promise<McpTool[]>;callReadTool(name:string,args:Record<string,unknown>):Promise<McpToolResult>;close():void}
 const coverage='在默认浏览器授权；本应用不读取浏览器 Cookie';
@@ -17,6 +18,7 @@ const coverage='在默认浏览器授权；本应用不读取浏览器 Cookie';
 export class OpenCodeConnection {
  private epoch=0;
  private closed=false;
+ private monitoring=true;
  private work?:Promise<void>;
  private interactive=false;
  private client?:ConsoleClient;
@@ -31,9 +33,11 @@ export class OpenCodeConnection {
  private status='not-connected';private detail=coverage;
  constructor(private auth:Authorization,private makeClient:()=>ConsoleClient,private publish:(state:OpenCodeConnectionState)=>void,private readDaily?:(orgId:string,userId:string,signal:AbortSignal)=>Promise<TokenHistory>){}
  private update(status:string,detail=coverage){this.status=status;this.detail=detail;if(!this.closed)this.publish({status,coverage:detail,usage:this.summary,history:this.history,historyStatus:this.historyStatus});}
- authorizationChanged(){if(this.auth.snapshot().status==='pending')this.update('browser-pending');}
+ authorizationChanged(){if(this.monitoring&&this.auth.snapshot().status==='pending')this.update('browser-pending');}
+ /** Pause collection without deleting the user's encrypted authorization. */
+ configure(enabled:boolean){if(this.monitoring===enabled||this.closed)return;this.monitoring=enabled;if(!enabled){this.epoch++;clearTimeout(this.timer);this.dailyAbort?.abort();this.work=undefined;this.client?.close();this.client=undefined;this.auth.cancel?.();this.tools=[];this.summary=undefined;this.history=undefined;this.historyStatus='idle';this.scope='';this.update('paused','OpenCode 监控已关闭');}else{this.update('not-connected');void this.open(false);}}
  open(interactive=true):Promise<void>{
-  if(this.closed)return Promise.resolve();
+  if(this.closed||!this.monitoring)return Promise.resolve();
   if(this.work){this.interactive ||= interactive;return this.work;}
   clearTimeout(this.timer);
   this.interactive=interactive;
